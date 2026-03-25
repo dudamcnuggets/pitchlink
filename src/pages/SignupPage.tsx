@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import AuthLayout from '../components/AuthLayout'
 import { signUpWithEmail } from '../services/auth'
 
@@ -7,6 +7,11 @@ const SignupPage = () => {
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [statusType, setStatusType] = useState<'error' | 'success' | null>(null)
+    const [selectedRole, setSelectedRole] = useState<'player' | 'manager'>('player')
+
+    const handleRoleChange = (event: ChangeEvent<HTMLSelectElement>) => {
+        setSelectedRole(event.target.value as 'player' | 'manager')
+    }
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault()
@@ -50,6 +55,7 @@ const SignupPage = () => {
             setStatusType('success')
             setStatusMessage(result.message ?? 'Account created successfully.')
             event.currentTarget.reset()
+            setSelectedRole('player')
         } catch {
             setStatusType('error')
             setStatusMessage('Unexpected error while creating account.')
@@ -69,6 +75,12 @@ const SignupPage = () => {
             <form className="auth-form" onSubmit={handleSubmit} noValidate>
                 <label htmlFor="email">Email</label>
                 <input id="email" name="email" type="email" autoComplete="email" required />
+
+                <label htmlFor="role">Role</label>
+                <select id="role" name="role" value={selectedRole} onChange={handleRoleChange}>
+                    <option value="player">Player</option>
+                    <option value="manager">Manager</option>
+                </select>
 
                 <label htmlFor="password">Password</label>
                 <input
