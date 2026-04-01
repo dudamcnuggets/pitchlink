@@ -1,4 +1,5 @@
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
+import { isSupabaseConfigured, supabase, supabaseConfigErrorMessage } from '../lib/supabaseClient'
 
 type AuthPayload = {
     email: string
@@ -8,6 +9,7 @@ type AuthPayload = {
 export type UserRole = 'player' | 'manager'
 
 type SignUpPayload = AuthPayload & {
+    fullName: string
     role: UserRole
 }
 
@@ -17,8 +19,18 @@ type AuthResult = {
     requiresEmailVerification?: boolean
 }
 
+type AuthSubscription = {
+    unsubscribe: () => void
+}
+
 const missingConfigMessage =
+    supabaseConfigErrorMessage ??
     'Supabase is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to continue.'
+
+const signInErrorMessage = 'Sign in failed. Check your email and password and try again.'
+const signUpErrorMessage = 'Sign up failed. Please try again.'
+
+const buildEmailRedirectUrl = () => new URL('/complete-profile', window.location.origin).toString()
 
 export const signInWithEmail = async ({ email, password }: AuthPayload): Promise<AuthResult> => {
     if (!isSupabaseConfigured || !supabase) {
@@ -28,13 +40,13 @@ export const signInWithEmail = async ({ email, password }: AuthPayload): Promise
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-        return { ok: false, message: error.message }
+        return { ok: false, message: signInErrorMessage }
     }
 
     return { ok: true }
 }
 
-export const signUpWithEmail = async ({ email, password, role }: SignUpPayload): Promise<AuthResult> => {
+export const signUpWithEmail = async ({ email, password, fullName, role }: SignUpPayload): Promise<AuthResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
     }
@@ -43,15 +55,16 @@ export const signUpWithEmail = async ({ email, password, role }: SignUpPayload):
         email,
         password,
         options: {
-            emailRedirectTo: `${window.location.origin}/complete-profile`,
+            emailRedirectTo: buildEmailRedirectUrl(),
             data: {
+                full_name: fullName.trim(),
                 role,
             },
         },
     })
 
     if (error) {
-        return { ok: false, message: error.message }
+        return { ok: false, message: signUpErrorMessage }
     }
 
     const requiresEmailVerification = !data.session
@@ -63,4 +76,63 @@ export const signUpWithEmail = async ({ email, password, role }: SignUpPayload):
             ? 'Check your email to verify your account. After verification, sign in and complete your profile.'
             : 'Account created successfully.',
     }
+}
+
+export const signOut = async (): Promise<AuthResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+        return { ok: false, message: 'Unable to sign out right now. Please try again.' }
+    }
+
+    return { ok: true }
+}
+
+export const getActiveSession = async (): Promise<Session | null> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return null
+    }
+
+    const {
+        data: { session },
+        error,
+    } = await supabase.auth.getSession()
+
+    if (error) {
+        return null
+    }
+
+    return session
+}
+
+export const getCurrentUser = async (): Promise<User | null> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return null
+    }
+
+    const {
+        data: { user },
+        error,
+    } = await supabase.auth.getUser()
+
+    if (error) {
+        return null
+    }
+
+    return user
+}
+
+export const subscribeToAuthStateChanges = (
+    listener: (event: AuthChangeEvent, session: Session | null) => void,
+): AuthSubscription | null => {
+    if (!isSupabaseConfigured || !supabase) {
+        return null
+    }
+
+    const { data } = supabase.auth.onAuthStateChange(listener)
+    return data.subscription
 }

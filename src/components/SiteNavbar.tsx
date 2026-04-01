@@ -14,7 +14,7 @@ type SiteNavbarProps = {
 const SiteNavbar = ({ links, ctaLabel, ctaTo }: SiteNavbarProps) => {
     return (
         <header className="topbar">
-            <div className="brand-mark">Pitch Link</div>
+            <a href='./'><div className="brand-mark">Pitch Link</div></a>
             <nav className="main-nav" aria-label="Main navigation">
                 {links.map((link) => (
                     <a key={link.href} href={link.href}>
