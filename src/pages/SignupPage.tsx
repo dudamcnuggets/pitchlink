@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
 import { signUpWithEmail } from '../services/auth'
 
 const SignupPage = () => {
+    const navigate = useNavigate()
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [statusType, setStatusType] = useState<'error' | 'success' | null>(null)
@@ -44,7 +46,7 @@ const SignupPage = () => {
         setIsSubmitting(true)
 
         try {
-            const result = await signUpWithEmail({ email, password })
+            const result = await signUpWithEmail({ email, password, role: selectedRole })
 
             if (!result.ok) {
                 setStatusType('error')
@@ -52,10 +54,19 @@ const SignupPage = () => {
                 return
             }
 
+            if (result.requiresEmailVerification) {
+                setStatusType('success')
+                setStatusMessage(result.message ?? 'Check your email to verify your account.')
+                return
+            }
+
             setStatusType('success')
             setStatusMessage(result.message ?? 'Account created successfully.')
-            event.currentTarget.reset()
-            setSelectedRole('player')
+            navigate(`/complete-profile?role=${selectedRole}`, {
+                state: {
+                    role: selectedRole,
+                },
+            })
         } catch {
             setStatusType('error')
             setStatusMessage('Unexpected error while creating account.')

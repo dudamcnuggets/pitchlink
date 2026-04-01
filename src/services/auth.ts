@@ -5,9 +5,16 @@ type AuthPayload = {
     password: string
 }
 
+export type UserRole = 'player' | 'manager'
+
+type SignUpPayload = AuthPayload & {
+    role: UserRole
+}
+
 type AuthResult = {
     ok: boolean
     message?: string
+    requiresEmailVerification?: boolean
 }
 
 const missingConfigMessage =
@@ -27,16 +34,19 @@ export const signInWithEmail = async ({ email, password }: AuthPayload): Promise
     return { ok: true }
 }
 
-export const signUpWithEmail = async ({ email, password }: AuthPayload): Promise<AuthResult> => {
+export const signUpWithEmail = async ({ email, password, role }: SignUpPayload): Promise<AuthResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
     }
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-            emailRedirectTo: `${window.location.origin}/`,
+            emailRedirectTo: `${window.location.origin}/complete-profile`,
+            data: {
+                role,
+            },
         },
     })
 
@@ -44,8 +54,13 @@ export const signUpWithEmail = async ({ email, password }: AuthPayload): Promise
         return { ok: false, message: error.message }
     }
 
+    const requiresEmailVerification = !data.session
+
     return {
         ok: true,
-        message: 'Check your email to verify your account before signing in.',
+        requiresEmailVerification,
+        message: requiresEmailVerification
+            ? 'Check your email to verify your account. After verification, sign in and complete your profile.'
+            : 'Account created successfully.',
     }
 }

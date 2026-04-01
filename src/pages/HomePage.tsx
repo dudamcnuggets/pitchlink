@@ -30,6 +30,9 @@ const HomePage = () => {
                         <Link className="secondary-button" to="/listings">
                             Explore Listings
                         </Link>
+                        <Link className="secondary-button" to="/complete-profile?role=player">
+                            Preview Complete Profile
+                        </Link>
                     </div>
                 </div>
             </section>

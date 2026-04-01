@@ -382,6 +382,20 @@ h1 {
   transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
+.auth-form textarea {
+  width: 100%;
+  border: 1px solid rgba(129, 174, 96, 0.36);
+  border-radius: 12px;
+  background: rgba(5, 14, 6, 0.56);
+  color: var(--text-main);
+  padding: 12px 14px;
+  font: inherit;
+  line-height: 1.55;
+  resize: vertical;
+  min-height: 112px;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
 .auth-form select {
   width: 100%;
   border: 1px solid rgba(129, 174, 96, 0.36);
@@ -405,10 +419,84 @@ h1 {
   background: #162213;
 }
 
+.position-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.position-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.position-remove-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(213, 120, 120, 0.56);
+  background: rgba(126, 30, 30, 0.35);
+  color: #ffd2d2;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.position-remove-button:hover {
+  background: rgba(148, 38, 38, 0.45);
+}
+
+.position-remove-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 158, 158, 0.2);
+}
+
+.auth-form .position-add-button {
+  width: 100%;
+}
+
+.height-unit-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.auth-form .height-unit-button {
+  width: 100%;
+}
+
+.auth-form .height-unit-button.active {
+  background: rgba(100, 150, 59, 0.26);
+  border-color: rgba(143, 190, 105, 0.82);
+}
+
+.height-imperial-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .auth-form input:focus-visible {
   outline: none;
   border-color: var(--accent-soft);
   box-shadow: 0 0 0 3px rgba(143, 190, 105, 0.25);
+}
+
+.auth-form textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent-soft);
+  box-shadow: 0 0 0 3px rgba(143, 190, 105, 0.25);
+}
+
+.auth-helper-text {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.58;
+  font-size: 0.92rem;
+}
+
+.auth-helper-text.error {
+  color: #ffd2d2;
 }
 
 .auth-form .primary-button {
