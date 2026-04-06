@@ -32,6 +32,31 @@ const signUpErrorMessage = 'Sign up failed. Please try again.'
 
 const buildEmailRedirectUrl = () => new URL('/complete-profile', window.location.origin).toString()
 
+type AuthErrorLike = {
+    message: string
+    status?: number
+    code?: string
+}
+
+const mapAuthErrorMessage = (error: AuthErrorLike, fallbackMessage: string): string => {
+    const normalizedMessage = error.message.toLowerCase()
+    const normalizedCode = error.code?.toLowerCase()
+
+    if (error.status === 429 || normalizedMessage.includes('rate limit') || normalizedCode?.includes('rate')) {
+        return 'Too many attempts right now. Please wait a minute and try again.'
+    }
+
+    if (normalizedMessage.includes('already registered')) {
+        return 'This email is already registered. Try signing in instead.'
+    }
+
+    if (normalizedMessage.includes('email not confirmed')) {
+        return 'Check your email and confirm your account before signing in.'
+    }
+
+    return fallbackMessage
+}
+
 export const signInWithEmail = async ({ email, password }: AuthPayload): Promise<AuthResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
@@ -40,7 +65,7 @@ export const signInWithEmail = async ({ email, password }: AuthPayload): Promise
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-        return { ok: false, message: signInErrorMessage }
+        return { ok: false, message: mapAuthErrorMessage(error, signInErrorMessage) }
     }
 
     return { ok: true }
@@ -64,7 +89,7 @@ export const signUpWithEmail = async ({ email, password, fullName, role }: SignU
     })
 
     if (error) {
-        return { ok: false, message: signUpErrorMessage }
+        return { ok: false, message: mapAuthErrorMessage(error, signUpErrorMessage) }
     }
 
     const requiresEmailVerification = !data.session

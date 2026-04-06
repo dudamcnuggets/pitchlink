@@ -122,74 +122,61 @@ const ProfilePage = () => {
     ]
 
     useEffect(() => {
-        let isMounted = true
+        const params = new URLSearchParams(location.search)
+        const previewRole = params.get('preview')
+        setIsEditorOpen(false)
 
-        const hydrateProfile = async () => {
-            const params = new URLSearchParams(location.search)
-            const previewRole = params.get('preview')
-
-            if (previewRole === 'player' || previewRole === 'manager') {
-                // Demo preview mode
-                const demoProfile: CurrentProfile = previewRole === 'player'
-                    ? {
-                        userId: 'demo-player-123',
-                        email: 'player.demo@pitchlink.com',
-                        fullName: 'Player Demo',
-                        username: 'player.demo',
-                        role: 'player',
-                        birthday: '2002-05-15',
-                        position: 'Striker, Right Winger',
-                        height: '180',
-                        bio: 'Aggressive forward with a knack for late runs. Looking for a team that values pace and finishing.',
-                        videoUrl: 'https://www.youtube.com/watch?v=playerdemo',
-                    }
-                    : {
-                        userId: 'demo-manager-456',
-                        email: 'manager.demo@pitchlink.com',
-                        fullName: 'Manager Demo',
-                        username: 'manager.demo',
-                        role: 'manager',
-                        birthday: '',
-                        position: '',
-                        height: '',
-                        bio: 'Manager for City United FC. Focused on building a dynamic, youth-driven squad for the upcoming season.',
-                        videoUrl: 'https://www.youtube.com/watch?v=managerdemo',
-                    }
-
-                if (!isMounted) {
-                    return
+        if (previewRole === 'player' || previewRole === 'manager') {
+            setIsPreviewMode(true)
+            // Demo preview mode
+            const demoProfile: CurrentProfile = previewRole === 'player'
+                ? {
+                    userId: 'demo-player-123',
+                    email: 'player.demo@pitchlink.com',
+                    fullName: 'Player Demo',
+                    username: 'player.demo',
+                    role: 'player',
+                    birthday: '2002-05-15',
+                    position: 'Striker, Right Winger',
+                    height: '180',
+                    bio: 'Aggressive forward with a knack for late runs. Looking for a team that values pace and finishing.',
+                    videoUrl: 'https://www.youtube.com/watch?v=playerdemo',
                 }
+                : {
+                    userId: 'demo-manager-456',
+                    email: 'manager.demo@pitchlink.com',
+                    fullName: 'Manager Demo',
+                    username: 'manager.demo',
+                    role: 'manager',
+                    birthday: '',
+                    position: '',
+                    height: '',
+                    bio: 'Manager for City United FC. Focused on building a dynamic, youth-driven squad for the upcoming season.',
+                    videoUrl: 'https://www.youtube.com/watch?v=managerdemo',
+                }
+            setProfile(demoProfile)
+            setBirthdayInput(demoProfile.birthday)
+            setSelectedPositions(splitPositions(demoProfile.position))
+            setHeightUnit('metric')
+            setHeightMetricInput(demoProfile.height)
+            setHeightFeetInput('')
+            setHeightInchesInput('')
+            setFullNameInput(demoProfile.fullName)
+            setUsernameInput(demoProfile.username)
+            setBioInput(demoProfile.bio)
+            setVideoUrlInput(demoProfile.videoUrl)
+            setIsLoading(false)
+            setLoadMessage(null)
+            return
+        }
 
-                setIsPreviewMode(true)
-                setProfile(demoProfile)
-                setBirthdayInput(demoProfile.birthday)
-                setSelectedPositions(splitPositions(demoProfile.position))
-                setHeightUnit('metric')
-                setHeightMetricInput(demoProfile.height)
-                setHeightFeetInput('')
-                setHeightInchesInput('')
-                setFullNameInput(demoProfile.fullName)
-                setUsernameInput(demoProfile.username)
-                setBioInput(demoProfile.bio)
-                setVideoUrlInput(demoProfile.videoUrl)
-                setIsLoading(false)
-                setLoadMessage(null)
-                return
-            }
+        setIsPreviewMode(false)
 
-            if (!isMounted) {
-                return
-            }
-
-            setIsPreviewMode(false)
+        const loadProfile = async () => {
             setIsLoading(true)
             setLoadMessage(null)
 
             const result = await getCurrentProfile()
-
-            if (!isMounted) {
-                return
-            }
 
             if (!result.ok || !result.profile) {
                 setLoadMessage(result.message ?? 'Unable to load your profile right now.')
@@ -213,11 +200,7 @@ const ProfilePage = () => {
             setIsLoading(false)
         }
 
-        void hydrateProfile()
-
-        return () => {
-            isMounted = false
-        }
+        void loadProfile()
     }, [location.search])
 
     const handlePositionChange = (index: number, value: string) => {
