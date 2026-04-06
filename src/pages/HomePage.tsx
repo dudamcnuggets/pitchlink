@@ -30,9 +30,6 @@ const HomePage = () => {
                         <Link className="secondary-button" to="/listings">
                             Explore Listings
                         </Link>
-                        <Link className="secondary-button" to="/profile?preview=player">
-                            Preview Profile Page
-                        </Link>
                     </div>
                 </div>
             </section>
