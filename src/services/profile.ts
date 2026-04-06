@@ -15,6 +15,12 @@ type CompleteProfileResult = {
     message?: string
 }
 
+type CurrentUserRoleResult = {
+    ok: boolean
+    role?: UserRole
+    message?: string
+}
+
 type IdentityUpdatePayload = {
     fullName: string
     username: string
@@ -25,8 +31,26 @@ type IdentityUpdateResult = {
     message?: string
 }
 
-type ProfileRow = {
+type LegacyProfileRow = {
     role: string | null
+    birthday: string | null
+    position: string | null
+    height: number | null
+    bio: string | null
+    url: string | null
+}
+
+type AppUserRoleRow = {
+    role: string | null
+}
+
+type AppUserIdentityRow = {
+    email: string | null
+    name: string | null
+    role: string | null
+}
+
+type PlayerRow = {
     birthday: string | null
     position: string | null
     height: number | null
@@ -106,6 +130,45 @@ const getNameFromMetadata = (value: unknown) => {
     return normalizedValue.length > 0 ? normalizedValue : null
 }
 
+const toHeightNumber = (height?: string) => {
+    const normalizedHeight = normalizeText(height)
+
+    if (!normalizedHeight) {
+        return null
+    }
+
+    const parsedHeight = Number(normalizedHeight)
+    return Number.isFinite(parsedHeight) ? parsedHeight : null
+}
+
+export const getCurrentUserRole = async (): Promise<CurrentUserRoleResult> => {
+    if (!isSupabaseConfigured || !supabase) {
+        return { ok: false, message: missingConfigMessage }
+    }
+
+    const {
+        data: { user },
+        error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+        return { ok: false, message: 'Sign in to continue.' }
+    }
+
+    const { data, error } = await supabase
+        .from('app_user')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle<AppUserRoleRow>()
+
+    if (error) {
+        return { ok: false, message: error.message }
+    }
+
+    const role = parseRole(data?.role) ?? parseRole(user.user_metadata?.role) ?? 'player'
+    return { ok: true, role }
+}
+
 export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
     if (!isSupabaseConfigured || !supabase) {
         return { ok: false, message: missingConfigMessage }
@@ -120,21 +183,46 @@ export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
         return { ok: false, message: 'Sign in to view your profile.' }
     }
 
-    const { data, error } = await supabase
-        .from('profile')
-        .select('role, birthday, position, height, bio, url')
-        .eq('user_id', user.id)
-        .maybeSingle<ProfileRow>()
+    const [appUserResult, playerResult, legacyProfileResult] = await Promise.all([
+        supabase
+            .from('app_user')
+            .select('email, name, role')
+            .eq('id', user.id)
+            .maybeSingle<AppUserIdentityRow>(),
+        supabase
+            .from('player')
+            .select('birthday, position, height, bio, url')
+            .eq('user_id', user.id)
+            .maybeSingle<PlayerRow>(),
+        supabase
+            .from('profile')
+            .select('role, birthday, position, height, bio, url')
+            .eq('user_id', user.id)
+            .maybeSingle<LegacyProfileRow>(),
+    ])
 
-    if (error) {
-        return { ok: false, message: error.message }
+    if (appUserResult.error || playerResult.error || legacyProfileResult.error) {
+        return {
+            ok: false,
+            message: appUserResult.error?.message ?? playerResult.error?.message ?? legacyProfileResult.error?.message,
+        }
     }
 
-    const fallbackRole = parseRole(user.user_metadata?.role) ?? 'player'
-    const role = parseRole(data?.role) ?? fallbackRole
-    const email = user.email ?? ''
-    const fullName = getNameFromMetadata(user.user_metadata?.full_name) ?? buildNameFromEmail(email)
+    const appUserData = appUserResult.data
+    const playerData = playerResult.data
+    const legacyProfileData = legacyProfileResult.data
+
+    const role =
+        parseRole(appUserData?.role) ?? parseRole(user.user_metadata?.role) ?? parseRole(legacyProfileData?.role) ?? 'player'
+
+    const email = appUserData?.email ?? user.email ?? ''
+    const fullName =
+        getNameFromMetadata(user.user_metadata?.full_name) ??
+        getNameFromMetadata(appUserData?.name) ??
+        buildNameFromEmail(email)
     const username = getUsernameFromMetadata(user.user_metadata?.username) ?? normalizeUsername(email.split('@')[0] ?? 'pitchlink')
+
+    const profileSource = role === 'player' ? playerData ?? legacyProfileData : legacyProfileData
 
     return {
         ok: true,
@@ -144,11 +232,14 @@ export const getCurrentProfile = async (): Promise<CurrentProfileResult> => {
             fullName,
             username,
             role,
-            birthday: data?.birthday ?? '',
-            position: data?.position ?? '',
-            height: data?.height === null || data?.height === undefined ? '' : String(data.height),
-            bio: data?.bio ?? '',
-            videoUrl: data?.url ?? '',
+            birthday: profileSource?.birthday ?? '',
+            position: profileSource?.position ?? '',
+            height:
+                profileSource?.height === null || profileSource?.height === undefined
+                    ? ''
+                    : String(profileSource.height),
+            bio: profileSource?.bio ?? '',
+            videoUrl: profileSource?.url ?? '',
         },
     }
 }
@@ -174,7 +265,58 @@ export const upsertProfile = async ({
         return { ok: false, message: 'Sign in to complete your profile.' }
     }
 
-    const normalizedHeight = normalizeText(height)
+    const normalizedHeight = toHeightNumber(height)
+
+    const { data: appUserData, error: appUserError } = await supabase
+        .from('app_user')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle<{ id: string }>()
+
+    if (appUserError) {
+        return { ok: false, message: appUserError.message }
+    }
+
+    if (!appUserData) {
+        return {
+            ok: false,
+            message: 'Account setup is still syncing. Please wait a moment and try again.',
+        }
+    }
+
+    const { error: roleError } = await supabase.from('app_user').update({ role }).eq('id', user.id)
+
+    if (roleError) {
+        return { ok: false, message: roleError.message }
+    }
+
+    if (role === 'manager') {
+        const { error: managerError } = await supabase
+            .from('manager')
+            .upsert({ user_id: user.id }, { onConflict: 'user_id' })
+
+        if (managerError) {
+            return { ok: false, message: managerError.message }
+        }
+    }
+
+    if (role === 'player') {
+        const { error: playerError } = await supabase.from('player').upsert(
+            {
+                user_id: user.id,
+                birthday: normalizeText(birthday),
+                position: normalizeText(position),
+                height: normalizedHeight,
+                bio: normalizeText(bio),
+                url: normalizeText(videoUrl),
+            },
+            { onConflict: 'user_id' },
+        )
+
+        if (playerError) {
+            return { ok: false, message: playerError.message }
+        }
+    }
 
     const profileRow: Record<string, string | number | null> = {
         user_id: user.id,
@@ -189,7 +331,7 @@ export const upsertProfile = async ({
     if (role === 'player') {
         profileRow.birthday = normalizeText(birthday)
         profileRow.position = normalizeText(position)
-        profileRow.height = normalizedHeight ? Number(normalizedHeight) : null
+        profileRow.height = normalizedHeight
     }
 
     const { error } = await supabase.from('profile').upsert(profileRow, { onConflict: 'user_id' })

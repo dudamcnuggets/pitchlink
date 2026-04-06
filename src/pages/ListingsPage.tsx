@@ -1,75 +1,36 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
 import SiteFooter from '../components/SiteFooter'
 import SiteNavbar from '../components/SiteNavbar'
-
-type RoleView = 'player' | 'manager'
-
-type MockListing = {
-    id: string
-    team: string
-    position: string
-    description: string
-    applicants: number
-}
-
-const playerMockListings: MockListing[] = [
-    {
-        id: 'nova-mid-laner',
-        team: 'Nova Horizon',
-        position: 'Mid Laner',
-        description:
-            'Looking for a high-communication shot caller who can control tempo and rotate early for objective setups.',
-        applicants: 26,
-    },
-    {
-        id: 'iron-root-initiator',
-        team: 'Iron Root',
-        position: 'Initiator',
-        description:
-            'Need an aggressive engage specialist with strong VOD review habits and consistent evening scrim availability.',
-        applicants: 14,
-    },
-    {
-        id: 'coastline-flex',
-        team: 'Coastline Collective',
-        position: 'Flex Support',
-        description:
-            'Searching for a flexible support who can swap comps quickly and anchor teamfight communication under pressure.',
-        applicants: 19,
-    },
-]
-
-const managerMockListings: MockListing[] = [
-    {
-        id: 'wildfire-igl',
-        team: 'Wildfire Academy',
-        position: 'In-Game Leader',
-        description:
-            'Own draft prep, lead live adaptations, and collaborate with staff on weekly progression goals.',
-        applicants: 33,
-    },
-    {
-        id: 'vertex-analyst',
-        team: 'Vertex Union',
-        position: 'Performance Analyst',
-        description:
-            'Build match prep packets, identify repeat mistakes, and present concise improvement plans to players.',
-        applicants: 12,
-    },
-    {
-        id: 'summit-jungle',
-        team: 'Summit Rift',
-        position: 'Jungle',
-        description:
-            'Need a pathing-focused jungler who can coordinate lane pressure and objective conversions in structured play.',
-        applicants: 21,
-    },
-]
+import { useAuth } from '../context/useAuth'
+import { submitApplication } from '../services/application'
+import { createListing, listListings, type Listing } from '../services/listing'
+import { getCurrentManagerTeams, listTeams, type Team } from '../services/team'
 
 const ListingsPage = () => {
-    const [roleView, setRoleView] = useState<RoleView>('player')
-    const listingData = roleView === 'player' ? playerMockListings : managerMockListings
-    const totalApplicants = listingData.reduce((sum, listing) => sum + listing.applicants, 0)
+    const { userRole, isRoleLoading } = useAuth()
+    const [listings, setListings] = useState<Listing[]>([])
+    const [visibleTeams, setVisibleTeams] = useState<Team[]>([])
+    const [isLoading, setIsLoading] = useState(true)
+    const [isCreating, setIsCreating] = useState(false)
+    const [isApplying, setIsApplying] = useState<string | null>(null)
+    const [statusMessage, setStatusMessage] = useState<string | null>(null)
+    const [statusType, setStatusType] = useState<'error' | 'success' | null>(null)
+    const [positionFilterInput, setPositionFilterInput] = useState('')
+    const [statusFilterInput, setStatusFilterInput] = useState('')
+    const [searchFilterInput, setSearchFilterInput] = useState('')
+    const [appliedFilters, setAppliedFilters] = useState({
+        position: '',
+        status: '',
+        searchTerm: '',
+    })
+    const [teamIdInput, setTeamIdInput] = useState('')
+    const [newStatusInput, setNewStatusInput] = useState('open')
+    const [newPositionInput, setNewPositionInput] = useState('')
+    const [newDescriptionInput, setNewDescriptionInput] = useState('')
+
+    const resolvedRole = userRole ?? 'player'
+    const isManagerView = resolvedRole === 'manager'
 
     const navLinks = [
         { label: 'Teams', href: '/teams' },
@@ -79,87 +40,285 @@ const ListingsPage = () => {
         { label: 'Profile', href: '/profile' },
     ]
 
+    const teamLookup = useMemo(() => {
+        return visibleTeams.reduce<Record<string, Team>>((accumulator, team) => {
+            accumulator[team.id] = team
+            return accumulator
+        }, {})
+    }, [visibleTeams])
+
+    const loadListings = useCallback(async () => {
+        setIsLoading(true)
+        setStatusMessage(null)
+        setStatusType(null)
+
+        const teamsResult = isManagerView ? await getCurrentManagerTeams() : await listTeams()
+        if (!teamsResult.ok) {
+            setStatusType('error')
+            setStatusMessage(teamsResult.message ?? 'Unable to load team context.')
+            setVisibleTeams([])
+            setListings([])
+            setIsLoading(false)
+            return
+        }
+
+        const teams = teamsResult.teams ?? []
+        setVisibleTeams(teams)
+
+        const listingsResult = await listListings({
+            position: appliedFilters.position,
+            status: appliedFilters.status,
+            searchTerm: appliedFilters.searchTerm,
+        })
+
+        if (!listingsResult.ok) {
+            setStatusType('error')
+            setStatusMessage(listingsResult.message ?? 'Unable to load listings right now.')
+            setListings([])
+            setIsLoading(false)
+            return
+        }
+
+        let nextListings = listingsResult.listings ?? []
+
+        if (isManagerView) {
+            const managedTeamIds = new Set(teams.map((team) => team.id))
+            nextListings = nextListings.filter((listing) => managedTeamIds.has(listing.teamId))
+        }
+
+        setListings(nextListings)
+
+        if (isManagerView && teams.length > 0 && teamIdInput.length === 0) {
+            setTeamIdInput(teams[0].id)
+        }
+
+        setIsLoading(false)
+    }, [appliedFilters.position, appliedFilters.searchTerm, appliedFilters.status, isManagerView, teamIdInput.length])
+
+    useEffect(() => {
+        if (isRoleLoading) {
+            return
+        }
+
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        void loadListings()
+    }, [isRoleLoading, loadListings])
+
+    const heading = isManagerView ? 'Create and maintain your recruiting listings.' : 'Track openings by position and status.'
+    const leadCopy = isManagerView
+        ? 'Publish listing updates for your teams and monitor active recruiting slots.'
+        : 'Browse current recruiting opportunities and apply to teams that fit your profile.'
+
+    const handleFilterSubmit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault()
+        setAppliedFilters({
+            position: positionFilterInput.trim(),
+            status: statusFilterInput.trim(),
+            searchTerm: searchFilterInput.trim(),
+        })
+    }
+
+    const handleCreateListing = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault()
+        setStatusMessage(null)
+        setStatusType(null)
+        setIsCreating(true)
+
+        const result = await createListing({
+            teamId: teamIdInput,
+            status: newStatusInput,
+            position: newPositionInput,
+            description: newDescriptionInput,
+        })
+
+        if (!result.ok) {
+            setStatusType('error')
+            setStatusMessage(result.message ?? 'Unable to create listing right now.')
+            setIsCreating(false)
+            return
+        }
+
+        setStatusType('success')
+        setStatusMessage('Listing created successfully.')
+        setNewPositionInput('')
+        setNewDescriptionInput('')
+        setNewStatusInput('open')
+        await loadListings()
+        setIsCreating(false)
+    }
+
+    const handleApply = async (teamId: string) => {
+        setStatusMessage(null)
+        setStatusType(null)
+        setIsApplying(teamId)
+
+        const result = await submitApplication({
+            teamId,
+            message: 'Application submitted from listings board.',
+        })
+
+        if (!result.ok) {
+            setStatusType('error')
+            setStatusMessage(result.message ?? 'Unable to submit application.')
+            setIsApplying(null)
+            return
+        }
+
+        setStatusType('success')
+        setStatusMessage('Application submitted successfully.')
+        setIsApplying(null)
+    }
+
     return (
         <main className="app-page listings-page">
             <section className="app-hero listings-page-hero">
-                <SiteNavbar links={navLinks} ctaLabel="Create account" ctaTo="/signup" />
+                <SiteNavbar links={navLinks} ctaLabel="Profile" ctaTo="/profile" />
                 <div className="app-hero-content">
                     <p className="eyebrow">Listings</p>
-                    <h1>Track openings by position and status.</h1>
-                    <p className="lead-copy">
-                        Mock listing previews are enabled so you can review card layout and hiring signal density before wiring
-                        live data.
-                    </p>
-                </div>
-            </section>
-
-            <section className="app-section role-switcher-shell" aria-label="Role view switcher">
-                <p className="section-label">Listings mode</p>
-                <div className="role-switcher" role="group" aria-label="Select listings role">
-                    <button
-                        className={`secondary-button role-switcher-button ${roleView === 'player' ? 'active' : ''}`}
-                        type="button"
-                        onClick={() => setRoleView('player')}
-                    >
-                        Player View
-                    </button>
-                    <button
-                        className={`secondary-button role-switcher-button ${roleView === 'manager' ? 'active' : ''}`}
-                        type="button"
-                        onClick={() => setRoleView('manager')}
-                    >
-                        Manager View
-                    </button>
+                    <h1>{heading}</h1>
+                    <p className="lead-copy">{leadCopy}</p>
                 </div>
             </section>
 
             <section className="app-section listings-page-grid" aria-label="Listing modules">
+                {statusMessage && <p className={`auth-helper-text ${statusType === 'error' ? 'error' : ''}`}>{statusMessage}</p>}
+
                 <article className="app-card">
-                    <p className="card-kicker">Snapshot</p>
-                    <h3>{roleView === 'player' ? 'Open opportunities' : 'Your active postings'}</h3>
-                    <p>
-                        {roleView === 'player'
-                            ? 'Use this preview to evaluate readability of listing cards from a player perspective.'
-                            : 'Use this preview to validate how your listings read when applicants are flowing in.'}
-                    </p>
-                    <div className="empty-slot">
-                        <strong>{listingData.length}</strong> listings visible · <strong>{totalApplicants}</strong> total applicants
-                    </div>
+                    <p className="card-kicker">Filters</p>
+                    <h3>{isManagerView ? 'Filter your listings' : 'Find open opportunities'}</h3>
+
+                    <form className="auth-form" onSubmit={handleFilterSubmit}>
+                        <label htmlFor="listingPosition">Position</label>
+                        <input
+                            id="listingPosition"
+                            type="text"
+                            value={positionFilterInput}
+                            onChange={(event) => setPositionFilterInput(event.target.value)}
+                        />
+
+                        <label htmlFor="listingStatus">Status</label>
+                        <input
+                            id="listingStatus"
+                            type="text"
+                            value={statusFilterInput}
+                            onChange={(event) => setStatusFilterInput(event.target.value)}
+                            placeholder="open"
+                        />
+
+                        <label htmlFor="listingSearch">Search</label>
+                        <input
+                            id="listingSearch"
+                            type="text"
+                            value={searchFilterInput}
+                            onChange={(event) => setSearchFilterInput(event.target.value)}
+                            placeholder="Position or description"
+                        />
+
+                        <button className="primary-button" type="submit">
+                            Apply Filters
+                        </button>
+                    </form>
                 </article>
 
                 <article className="app-card">
                     <p className="card-kicker">Actions</p>
-                    <h3>{roleView === 'player' ? 'Apply to listing' : 'Create listing'}</h3>
-                    <p>
-                        {roleView === 'player'
-                            ? 'Applications are still mocked, but this reflects where users will enter the flow.'
-                            : 'Creation and publish controls are staged next once the schema endpoints are connected.'}
-                    </p>
-                    <button className="primary-button" type="button" disabled>
-                        Coming soon
-                    </button>
+                    <h3>{isManagerView ? 'Create listing' : 'Apply from board'}</h3>
+
+                    {isManagerView ? (
+                        <form className="auth-form" onSubmit={handleCreateListing}>
+                            <label htmlFor="listingTeam">Team</label>
+                            <select
+                                id="listingTeam"
+                                value={teamIdInput}
+                                onChange={(event) => setTeamIdInput(event.target.value)}
+                                required
+                            >
+                                {visibleTeams.length === 0 && <option value="">No managed teams</option>}
+                                {visibleTeams.map((team) => (
+                                    <option key={team.id} value={team.id}>
+                                        {team.name}
+                                    </option>
+                                ))}
+                            </select>
+
+                            <label htmlFor="newListingStatus">Status</label>
+                            <input
+                                id="newListingStatus"
+                                type="text"
+                                value={newStatusInput}
+                                onChange={(event) => setNewStatusInput(event.target.value)}
+                                required
+                            />
+
+                            <label htmlFor="newListingPosition">Position</label>
+                            <input
+                                id="newListingPosition"
+                                type="text"
+                                value={newPositionInput}
+                                onChange={(event) => setNewPositionInput(event.target.value)}
+                            />
+
+                            <label htmlFor="newListingDescription">Description</label>
+                            <textarea
+                                id="newListingDescription"
+                                rows={4}
+                                value={newDescriptionInput}
+                                onChange={(event) => setNewDescriptionInput(event.target.value)}
+                            />
+
+                            <button
+                                className="primary-button"
+                                type="submit"
+                                disabled={isCreating || visibleTeams.length === 0 || teamIdInput.length === 0}
+                            >
+                                {isCreating ? 'Creating...' : 'Create Listing'}
+                            </button>
+                        </form>
+                    ) : (
+                        <p className="empty-slot">
+                            Open a listing card and click Apply to submit your application.
+                        </p>
+                    )}
                 </article>
 
                 <article className="app-card app-card-wide">
                     <p className="card-kicker">Listing Board</p>
-                    <h3>{roleView === 'player' ? 'Available opportunities' : 'Listings you manage'}</h3>
-                    <p>
-                        Each listing includes the team posting it, role title, short role brief, and applicant momentum.
-                    </p>
-                    <div className="listing-board">
-                        {listingData.map((listing) => (
-                            <article className="listing-entry" key={listing.id}>
-                                <header className="listing-entry-header">
-                                    <p className="listing-team">{listing.team}</p>
-                                    <p className="listing-applicants">
-                                        {listing.applicants} {listing.applicants === 1 ? 'applicant' : 'applicants'}
-                                    </p>
-                                </header>
-                                <h4>{listing.position}</h4>
-                                <p>{listing.description}</p>
-                            </article>
-                        ))}
-                    </div>
+                    <h3>{isManagerView ? 'Listings you manage' : 'Available opportunities'}</h3>
+                    <p>{isLoading ? 'Loading listings...' : `${listings.length} listings found for current filters.`}</p>
+
+                    {isRoleLoading || isLoading ? (
+                        <div className="empty-slot">Loading listing board...</div>
+                    ) : listings.length === 0 ? (
+                        <div className="empty-slot">No listings found.</div>
+                    ) : (
+                        <div className="listing-board">
+                            {listings.map((listing) => {
+                                const team = teamLookup[listing.teamId]
+
+                                return (
+                                    <article className="listing-entry" key={listing.id}>
+                                        <header className="listing-entry-header">
+                                            <p className="listing-team">{team?.name ?? 'Unknown Team'}</p>
+                                            <p className="listing-applicants">{listing.status}</p>
+                                        </header>
+                                        <h4>{listing.position || 'Position pending'}</h4>
+                                        <p>{listing.description || 'Description pending'}</p>
+
+                                        {!isManagerView && (
+                                            <button
+                                                className="primary-button"
+                                                type="button"
+                                                onClick={() => handleApply(listing.teamId)}
+                                                disabled={isApplying === listing.teamId}
+                                            >
+                                                {isApplying === listing.teamId ? 'Applying...' : 'Apply'}
+                                            </button>
+                                        )}
+                                    </article>
+                                )
+                            })}
+                        </div>
+                    )}
                 </article>
             </section>
 
